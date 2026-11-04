@@ -14,3 +14,6 @@ build/
 *.log
 .DS_Store
 Thumbs.db
+
+# raw API responses saved by sandbox scripts
+backend/scripts/out/
