@@ -1,0 +1,16 @@
+# dependencies (huge, and reinstallable from package.json)
+node_modules/
+
+# secrets: API keys, database passwords. NEVER commit these.
+.env
+.env.*
+!.env.example
+
+# build output
+dist/
+build/
+
+# logs and OS junk
+*.log
+.DS_Store
+Thumbs.db
