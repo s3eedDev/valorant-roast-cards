@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -10,4 +5,136 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ---------------------------------------------------------------
+// Lookup: which games exist (Valorant now, others later)
+// ---------------------------------------------------------------
+model Game {
+  id   Int    @id @default(autoincrement())
+  slug String @unique // "valorant"
+  name String // "Valorant"
+
+  players    Player[]
+  matches    Match[]
+  dimensions Dimension[]
+
+  @@map("games")
+}
+
+// ---------------------------------------------------------------
+// Lookup: names of maps / agents / weapons, per game.
+// Stops free-text typos ("Ascent" vs "ascent") and keeps each
+// game's own list separate.
+// ---------------------------------------------------------------
+enum DimensionType {
+  MAP
+  AGENT
+  WEAPON
+}
+
+model Dimension {
+  id          Int           @id @default(autoincrement())
+  gameId      Int           @map("game_id")
+  type        DimensionType
+  key         String // stable name from the source API, e.g. "Jett"
+  displayName String        @map("display_name") // what we show on the card
+
+  game          Game          @relation(fields: [gameId], references: [id])
+  matchesOnMap  Match[]       @relation("MatchMap")
+  matchPlayers  MatchPlayer[] @relation("PlayedAgent")
+  killsByWeapon KillEvent[]   @relation("KillWeapon")
+
+  @@unique([gameId, type, key])
+  @@map("dimensions")
+}
+
+// ---------------------------------------------------------------
+// Anyone who appears in a match: your friends AND strangers.
+// is_tracked = true marks your friend group (the ones we roast).
+// ---------------------------------------------------------------
+model Player {
+  id         Int     @id @default(autoincrement())
+  gameId     Int     @map("game_id")
+  externalId String  @map("external_id") // puuid from the API
+  name       String
+  tag        String?
+  isTracked  Boolean @default(false) @map("is_tracked")
+
+  game         Game          @relation(fields: [gameId], references: [id])
+  matchPlayers MatchPlayer[]
+
+  @@unique([gameId, externalId])
+  @@map("players")
+}
+
+// ---------------------------------------------------------------
+// One played game. external_id is the API's match id, so a second
+// sync can skip matches we already stored.
+// ---------------------------------------------------------------
+model Match {
+  id         Int      @id @default(autoincrement())
+  gameId     Int      @map("game_id")
+  externalId String   @map("external_id")
+  mapId      Int      @map("map_id")
+  mode       String // "competitive", "unrated", ...
+  startedAt  DateTime @map("started_at")
+
+  game         Game          @relation(fields: [gameId], references: [id])
+  map          Dimension     @relation("MatchMap", fields: [mapId], references: [id])
+  matchPlayers MatchPlayer[]
+  killEvents   KillEvent[]
+
+  @@unique([gameId, externalId])
+  @@index([startedAt])
+  @@map("matches")
+}
+
+// ---------------------------------------------------------------
+// One player in one match (the "middle table" of a many-to-many).
+// Holds the per-match facts: agent, team, result, K/D/A.
+// ---------------------------------------------------------------
+model MatchPlayer {
+  id       Int     @id @default(autoincrement())
+  matchId  Int     @map("match_id")
+  playerId Int     @map("player_id")
+  agentId  Int     @map("agent_id")
+  team     String // "Red" / "Blue"
+  won      Boolean
+  kills    Int
+  deaths   Int
+  assists  Int
+
+  match  Match     @relation(fields: [matchId], references: [id])
+  player Player    @relation(fields: [playerId], references: [id])
+  agent  Dimension @relation("PlayedAgent", fields: [agentId], references: [id])
+
+  killsMade   KillEvent[] @relation("Killer")
+  deathsTaken KillEvent[] @relation("Victim")
+
+  @@unique([matchId, playerId])
+  @@index([playerId])
+  @@map("match_players")
+}
+
+// ---------------------------------------------------------------
+// One kill. The weapon only exists here (Henrik gives it per kill),
+// so weapon roasts = aggregate these rows.
+// ---------------------------------------------------------------
+model KillEvent {
+  id       Int  @id @default(autoincrement())
+  matchId  Int  @map("match_id")
+  killerId Int  @map("killer_id") // -> match_players.id
+  victimId Int  @map("victim_id") // -> match_players.id
+  weaponId Int? @map("weapon_id") // null for ability / unknown kills
+  round    Int
+
+  match  Match       @relation(fields: [matchId], references: [id])
+  killer MatchPlayer @relation("Killer", fields: [killerId], references: [id])
+  victim MatchPlayer @relation("Victim", fields: [victimId], references: [id])
+  weapon Dimension?  @relation("KillWeapon", fields: [weaponId], references: [id])
+
+  @@index([killerId])
+  @@index([victimId])
+  @@map("kill_events")
 }
