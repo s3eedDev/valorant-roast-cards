@@ -22,5 +22,5 @@
 6. Frontend
 
 ## Stack
-- Backend: Node + Express + TypeScript (CommonJS modules)
+- Backend: Node + Express + TypeScript (ESM modules, required by Prisma 7), Prisma 7 + PostgreSQL (Docker, port 5433)
 - Repo layout: single repo, `backend/` and `frontend/` folders
